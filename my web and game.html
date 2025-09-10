@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Block Blast Pro - 100 Levels</title>
+<style>
+  /* ... keep previous styles ... */
+
+  #leaderboardContainer {
+    margin-top: 20px;
+    width: 480px;
+    max-width: 95vw;
+    background: #1b1b1b;
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: 0 0 15px #0ff;
+    color: #0ff;
+    font-family: monospace;
+  }
+  #leaderboardContainer h3 {
+    margin-bottom: 10px;
+  }
+  #leaderboardList {
+    list-style: none;
+    padding-left: 0;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  #leaderboardList li {
+    margin-bottom: 6px;
+    border-bottom: 1px solid #0ff3;
+    padding-bottom: 4px;
+  }
+  #clearLeaderboardBtn {
+    margin-top: 10px;
+    padding: 7px 18px;
+    border: none;
+    border-radius: 7px;
+    background-color: #0ff;
+    color: #121212;
+    cursor: pointer;
+    font-weight: bold;
+  }
+  #clearLeaderboardBtn:hover {
+    background-color: #08c;
+    color: #fff;
+  }
+</style>
+</head>
+<body>
+
+<!-- Login screen -->
+<div id="loginContainer">
+  <h2>Login to Block Blast Pro</h2>
+  <input type="email" id="emailInput" placeholder="Email" required />
+  <input type="password" id="passwordInput" placeholder="Password" required />
+  <button id="loginBtn">Log In</button>
+  <div id="errorMessage"></div>
+</div>
+
+<!-- Game screen -->
+<div id="gameContainer" style="display:none; flex-direction: column; align-items: center;">
+  <div id="info">
+    <div>Lives: <span id="lives">3</span></div>
+    <div>Score: <span id="score">0</span></div>
+    <div>Level: <span id="level">1</span>/100</div>
+  </div>
+
+  <canvas id="gameCanvas" width="480" height="320"></canvas>
+
+  <button id="startBtn">Start / Restart Game</button>
+
+  <!-- Leaderboard -->
+  <div id="leaderboardContainer">
+    <h3>Leaderboard (Top 5)</h3>
+    <ul id="leaderboardList"></ul>
+    <button id="clearLeaderboardBtn">Clear Leaderboard</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const correctEmail = "rolandberroya1@gmail.com";
+  const correctPassword = "berroya012515";
+
+  const loginContainer = document.getElementById('loginContainer');
+  const gameContainer = document.getElementById('gameContainer');
+  const loginBtn = document.getElementById('loginBtn');
+  const errorMessage = document.getElementById('errorMessage');
+
+  const emailInput = document.getElementById('emailInput');
+  const passwordInput = document.getElementById('passwordInput');
+
+  let currentUserEmail = "";
+
+  loginBtn.addEventListener('click', () => {
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+
+    if(email === correctEmail && password === correctPassword) {
+      errorMessage.textContent = "";
+      loginContainer.style.display = "none";
+      gameContainer.style.display = "flex";
+      currentUserEmail = email;
+      initGame();
+      loadLeaderboard();
+    } else {
+      errorMessage.textContent = "Invalid email or password. Please try again.";
+    }
+  });
+
+  function initGame() {
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const livesDisplay = document.getElementById('lives');
+    const scoreDisplay = document.getElementById('score');
+    const levelDisplay = document.getElementById('level');
+    const startBtn = document.getElementById('startBtn');
+
+    const leaderboardList = document.getElementById('leaderboardList');
+    const clearLeaderboardBtn = document.getElementById('clearLeaderboardBtn');
+
+    const MAX_LEVEL = 100;
+    const INITIAL_LIVES = 3;
+
+    const paddle = { height: 12, width: 90, x: (canvas.width - 90) / 2, speed: 8 };
+    const ball = { radius: 9, x: 0, y: 0, dx: 0, dy: 0, speed: 4 };
+    const brick = { width: 60, height: 22, padding: 8, offsetTop: 50, offsetLeft: 35 };
+
+    let bricks = [];
+    let rightPressed = false;
+    let leftPressed = false;
+    let lives = INITIAL_LIVES;
+    let score = 0;
+    let level = 1;
+    let isPlaying = false;
+
+    function createBricks(level) {
+      bricks = [];
+      const rows = Math.min(4 + Math.floor(level / 10), 10);
+      const cols = Math.min(6 + Math.floor(level / 20), 10);
+
+      for (let c = 0; c < cols; c++) {
+        bricks[c] = [];
+        for (let r = 0; r < rows; r++) {
+          bricks[c][r] = { x: 0, y: 0, status: 1 };
+        }
+      }
+
+      brick.width = Math.floor((canvas.width - brick.offsetLeft * 2 - (cols - 1) * brick.padding) / cols);
+      brick.height = 20;
+
+      return { rows, cols };
+    }
+
+    function drawBricks() {
+      for (let c = 0; c < bricks.length; c++) {
+        for (let r = 0; r < bricks[c].length; r++) {
+          const b = bricks[c][r];
+          if (b.status === 1) {
+            const brickX = c * (brick.width + brick.padding) + brick.offsetLeft;
+            const brickY = r * (brick.height + brick.padding) + brick.offsetTop;
+            b.x = brickX;
+            b.y = brickY;
+            ctx.beginPath();
+            const colorVal = 255 - r * 15 - c * 10;
+            ctx.fillStyle = `rgb(${colorVal}, ${Math.min(colorVal + 100,255)}, 100)`;
+            ctx.fillRect(brickX, brickY, brick.width, brick.height);
+            ctx.strokeStyle = "#121212";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(brickX, brickY, brick.width, brick.height);
+            ctx.closePath();
+          }
+        }
+      }
+    }
+
+    function drawPaddle() {
+      ctx.beginPath();
+      ctx.fillStyle = '#00FFAA';
+      ctx.shadowColor = '#00FFAA';
+      ctx.shadowBlur = 15;
+      ctx.fillRect(paddle.x, canvas.height - paddle.height - 10, paddle.width, paddle.height);
+      ctx.closePath();
+      ctx.shadowBlur = 0;
+    }
+
+    function drawBall() {
+      ctx.beginPath();
+      ctx.fillStyle = '#00CCFF';
+      ctx.shadowColor = '#00CCFF';
+      ctx.shadowBlur = 10;
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.closePath();
+      ctx.shadowBlur = 0;
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBricks();
+      drawBall();
+      drawPaddle();
+    }
+
+    function collisionDetection() {
+      let bricksDestroyed = 0;
+
+      for (let c = 0; c < bricks.length; c++) {
+        for (let r = 0; r < bricks[c].length; r++) {
+          const b = bricks[c][r];
+          if (b.status === 1) {
+            if (
+              ball.x > b.x &&
+              ball.x < b.x + brick.width &&
+              ball.y > b.y &&
+              ball.y < b.y + brick.height
+            ) {
+              ball.dy = -ball.dy;
+              b.status = 0;
+              score++;
+              scoreDisplay.textContent = score;
+            }
+          }
+          if (b.status === 0) bricksDestroyed++;
+        }
+      }
+      if (bricksDestroyed === bricks.length * bricks[0].length) {
+        nextLevel();
+      }
+    }
+
+    function movePaddle() {
+      if (rightPressed && paddle.x < canvas.width - paddle.width) {
+        paddle.x += paddle.speed;
+      }
+      if (leftPressed && paddle.x > 0) {
+        paddle.x -= paddle.speed;
+      }
+    }
+
+    function update() {
+      if (!isPlaying) return;
+
+      draw();
+
+      ball.x += ball.dx;
+      ball.y += ball.dy;
+
+      if (ball.x + ball.dx > canvas.width - ball.radius || ball.x + ball.dx < ball.radius) {
+        ball.dx = -ball.dx;
+      }
+      if (ball.y + ball.dy < ball.radius) {
+        ball.dy = -ball.dy;
+      } else if (ball.y + ball.dy > canvas.height - ball.radius - paddle.height - 10) {
+        if (ball.x > paddle.x && ball.x < paddle.x + paddle.width) {
+          let hitPos = ball.x - (paddle.x + paddle.width / 2);
+          ball.dx = hitPos * 0.25;
+          ball.dy = -ball.dy;
+        } else {
+          lives--;
+          livesDisplay.textContent = lives;
+          if (lives === 0) {
+            alert(`Game Over! Your score: ${score}`);
+            addScoreToLeaderboard(currentUserEmail, score);
+            loadLeaderboard();
+            resetGame();
+            return;
+          } else {
+            resetBallAndPaddle();
+          }
+        }
+      }
+
+      collisionDetection();
+      movePaddle();
+
+      requestAnimationFrame(update);
+    }
+
+    function resetBallAndPaddle() {
+      ball.x = canvas.width / 2;
+      ball.y = canvas.height - 40;
+      ball.dx = ball.speed * (Math.random() > 0.5 ? 1 : -1);
+      ball.dy = -ball.speed;
+
+      paddle.x = (canvas.width - paddle.width) / 2;
+    }
+
+    function resetGame() {
+      lives = INITIAL_LIVES;
+      score = 0;
+      level = 1;
+      levelDisplay.textContent = level;
+      livesDisplay.textContent = lives;
+      scoreDisplay.textContent = score;
+      paddle.width = 90;
+      ball.speed = 4;
+      createBricks(level);
+      resetBallAndPaddle();
+      isPlaying = true;
+      update();
+    }
+
+    function nextLevel() {
+      if(level >= MAX_LEVEL){
+        alert(`🎉 You completed all ${MAX_LEVEL} levels! Final score: ${score}`);
+        addScoreToLeaderboard(currentUserEmail, score);
+        loadLeaderboard();
+        resetGame();
+        return;
+      }
+      level++;
+      levelDisplay.textContent = level;
+      ball.speed += 0.4;
+      paddle.width = Math.max(50, paddle.width - 2);
+      createBricks(level);
+      resetBallAndPaddle();
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'Right') rightPressed = true;
+      if (e.key === 'ArrowLeft' || e.key === 'Left') leftPressed = true;
+    });
+
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'Right') rightPressed = false;
+      if (e.key === 'ArrowLeft' || e.key === 'Left') leftPressed = false;
+    });
+
+    canvas.addEventListener('touchstart', (e) => {
+      const touchX = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+      if (touchX > canvas.width / 2) {
+        rightPressed = true;
+      } else {
+        leftPressed = true;
+      }
+    });
+
+    canvas.addEventListener('touchend', () => {
+      rightPressed = false;
+      leftPressed = false;
+    });
+
+    startBtn.addEventListener('click', () => {
+      if (!isPlaying) resetGame();
+    });
+
+    // LEADERBOARD FUNCTIONS
+
+    function getLeaderboard() {
+      const stored = localStorage.getItem('blockBlastLeaderboard');
+      return stored ? JSON.parse(stored) : [];
+    }
+
+    function saveLeaderboard(list) {
+      localStorage.setItem('blockBlastLeaderboard', JSON.stringify(list));
+    }
+
+    function addScoreToLeaderboard(userEmail, score) {
+      if (!userEmail) return;
+
+      let list = getLeaderboard();
+      list.push({ email: userEmail, score: score });
+      // Sort descending by score
+      list.sort((a, b) => b.score - a.score);
+      // Keep only top 5
+      if (list.length > 5) list = list.slice(0,5);
+      saveLeaderboard(list);
+    }
+
+    function loadLeaderboard() {
+      const list = getLeaderboard();
+      leaderboardList.innerHTML = "";
+      if(list.length === 0){
+        leaderboardList.innerHTML = "<li>No scores yet.</li>";
+        return;
+      }
+      list.forEach((entry, i) => {
+        leaderboardList.innerHTML += `<li><strong>#${i+1}</strong> ${entry.email} — <span style="color:#0f0">${entry.score}</span></li>`;
+      });
+    }
+
+    clearLeaderboardBtn.addEventListener('click', () => {
+      if(confirm("Clear the leaderboard?")) {
+        localStorage.removeItem('blockBlastLeaderboard');
+        loadLeaderboard();
+      }
+    });
+
+    // Initial setup (show paddle and bricks but paused)
+    createBricks(level);
+    resetBallAndPaddle();
+    draw();
+  }
+})();
+</script>
+
+</body>
+</html>
